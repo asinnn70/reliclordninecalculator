@@ -332,10 +332,6 @@ export default function App() {
                               {activeCalc.totalCost.toLocaleString()}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-[9px] uppercase tracking-widest opacity-20 mb-1">Next Level</div>
-                            <div className="text-sm font-mono opacity-40">{activeCalc.nextLevelCost.toLocaleString()}</div>
-                          </div>
                         </div>
                       </div>
                     )}
