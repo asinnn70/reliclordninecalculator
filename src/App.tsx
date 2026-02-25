@@ -34,7 +34,6 @@ export default function App() {
   const [activeRelicId, setActiveRelicId] = useState('destruction');
   const [selectedChestTier, setSelectedChestTier] = useState<string>('T5');
   const [marketPrices, setMarketPrices] = useState<Record<string, { pieces: number, price: number, lastUpdated: number }>>({});
-  const [socket, setSocket] = useState<WebSocket | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState('USDT');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USDT: 1 });
   const [expandedRelic, setExpandedRelic] = useState<string | null>(null);
@@ -83,25 +82,28 @@ export default function App() {
   };
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}`);
-    
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      if (payload.type === 'INIT' || payload.type === 'UPDATE') {
-        setMarketPrices(payload.data);
+    const fetchMarketPrices = async () => {
+      try {
+        const response = await fetch('/api/market');
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload.type === 'UPDATE') {
+            setMarketPrices(payload.data);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch market prices:', error);
       }
     };
 
-    setSocket(ws);
-    return () => ws.close();
-  }, []);
+    // Initial fetch
+    fetchMarketPrices();
 
-  const submitPrice = (tier: string, price: number) => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'UPDATE_PRICE', data: { tier, price } }));
-    }
-  };
+    // Poll every 60 seconds
+    const intervalId = setInterval(fetchMarketPrices, 60000);
+
+    return () => clearInterval(intervalId);
+  }, []);
   
   // Manage levels for each relic individually
   const [relicLevels, setRelicLevels] = useState<Record<string, { current: number, target: number }>>({

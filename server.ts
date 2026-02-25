@@ -1,33 +1,39 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
+
+// Market Prices State for local dev
+let marketPrices = {
+  T1: { pieces: 1000, price: 0, lastUpdated: 0 },
+  T2: { pieces: 5000, price: 0, lastUpdated: 0 },
+  T3: { pieces: 10000, price: 0, lastUpdated: 0 },
+  T4: { pieces: 50000, price: 0, lastUpdated: 0 },
+  T5: { pieces: 100000, price: 0, lastUpdated: 0 },
+};
+
+let isFetching = false;
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  const wss = new WebSocketServer({ server });
   const PORT = 3000;
 
-  // Market Prices State
-  let marketPrices = {
-    T1: { pieces: 1000, price: 0, lastUpdated: Date.now() },
-    T2: { pieces: 5000, price: 0, lastUpdated: Date.now() },
-    T3: { pieces: 10000, price: 0, lastUpdated: Date.now() },
-    T4: { pieces: 50000, price: 0, lastUpdated: Date.now() },
-    T5: { pieces: 100000, price: 0, lastUpdated: Date.now() },
-  };
+  // API Route for Market Prices (Used by both local dev and Vercel)
+  app.get("/api/market", async (req, res) => {
+    const now = Date.now();
+    
+    // Cache for 60 seconds
+    if (now - marketPrices.T1.lastUpdated < 60000) {
+      return res.status(200).json({ type: "UPDATE", data: marketPrices });
+    }
 
-  const broadcastPrices = () => {
-    const broadcastData = JSON.stringify({ type: "UPDATE", data: marketPrices });
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(broadcastData);
-      }
-    });
-  };
+    if (isFetching) {
+      // Return stale data while fetching
+      return res.status(200).json({ type: "UPDATE", data: marketPrices });
+    }
 
-  const fetchAllPrices = async () => {
+    isFetching = true;
+
     const ITEMS = [
       { tier: 'T1', name: "T1 Temporal Piece Chest x1,000" },
       { tier: 'T2', name: "T2 Temporal Piece Chest x5,000" },
@@ -36,10 +42,8 @@ async function startServer() {
       { tier: 'T5', name: "T5 Temporal Piece Chest x100,000" }
     ];
 
-    let updated = false;
-
-    for (const item of ITEMS) {
-      try {
+    try {
+      for (const item of ITEMS) {
         const response = await fetch('https://api.nextmarket.games/l9asia/v1/sale/c2c?page=0', {
           method: 'POST',
           headers: {
@@ -60,64 +64,25 @@ async function startServer() {
           const data = await response.json();
           const itemsList = data.content?.filter((x: any) => x.item?.name === item.name) || [];
           
-          console.log(`[${item.tier}] Fetched ${data.content?.length || 0} items, filtered to ${itemsList.length} exact matches for "${item.name}"`);
-          
           if (itemsList.length > 0) {
             const cheapest = itemsList.reduce((min: any, current: any) => {
               return current.cryptoPriceInfo.price < min.cryptoPriceInfo.price ? current : min;
             });
-            
-            const price = cheapest.cryptoPriceInfo.price;
-            console.log(`[${item.tier}] Cheapest price found: ${price}`);
-            
-            if (marketPrices[item.tier as keyof typeof marketPrices].price !== price) {
-              marketPrices[item.tier as keyof typeof marketPrices].price = price;
-              marketPrices[item.tier as keyof typeof marketPrices].lastUpdated = Date.now();
-              updated = true;
-            }
-          } else if (data.content && data.content.length > 0) {
-            console.log(`[${item.tier}] Sample of names returned:`, data.content.slice(0, 3).map((x: any) => x.item?.name));
-          }
-        } else {
-          console.error(`Failed to fetch ${item.tier} price:`, response.statusText);
-        }
-      } catch (error) {
-        console.error(`Error fetching ${item.tier} price:`, error);
-      }
-      
-      // Sleep for 1 second between requests to avoid IP bans
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
-    if (updated) {
-      broadcastPrices();
-    }
-  };
-
-  // Fetch all prices every 60 seconds
-  setInterval(fetchAllPrices, 60000);
-  // Initial fetch
-  fetchAllPrices();
-
-  wss.on("connection", (ws) => {
-    // Send initial state
-    ws.send(JSON.stringify({ type: "INIT", data: marketPrices }));
-
-    ws.on("message", (message) => {
-      try {
-        const payload = JSON.parse(message.toString());
-        if (payload.type === "UPDATE_PRICE") {
-          const { tier, price } = payload.data;
-          if (marketPrices[tier as keyof typeof marketPrices]) {
-            marketPrices[tier as keyof typeof marketPrices].price = price;
-            marketPrices[tier as keyof typeof marketPrices].lastUpdated = Date.now();
-            broadcastPrices();
+            marketPrices[item.tier as keyof typeof marketPrices].price = cheapest.cryptoPriceInfo.price;
           }
         }
-      } catch (e) {
-        console.error("Error processing message:", e);
+        marketPrices[item.tier as keyof typeof marketPrices].lastUpdated = Date.now();
+        
+        // Sleep slightly to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-    });
+    } catch (error) {
+      console.error("Error fetching prices:", error);
+    } finally {
+      isFetching = false;
+    }
+
+    return res.status(200).json({ type: "UPDATE", data: marketPrices });
   });
 
   // Vite middleware for development
