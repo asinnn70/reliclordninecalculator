@@ -38,6 +38,30 @@ export default function App() {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ USDT: 1 });
   const [expandedRelic, setExpandedRelic] = useState<string | null>(null);
   const [isEnhancementExpanded, setIsEnhancementExpanded] = useState(true);
+  const [visitors, setVisitors] = useState({ total: 0, online: 1 });
+
+  useEffect(() => {
+    // Generate a simple unique ID for this session
+    const sessionId = Math.random().toString(36).substring(2, 15);
+    
+    const fetchVisitors = async (isFirstVisit = false) => {
+      try {
+        const url = `/api/visitors?id=${sessionId}${isFirstVisit ? '&action=visit' : ''}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          setVisitors(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch visitors:', error);
+      }
+    };
+
+    fetchVisitors(true);
+    const intervalId = setInterval(() => fetchVisitors(false), 30000); // Poll every 30s for online status
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     fetch('https://api.exchangerate-api.com/v4/latest/USD')
@@ -188,17 +212,32 @@ export default function App() {
                 <span className="text-[9px] font-display tracking-[0.3em] text-[#D4AF37] uppercase mt-1">Server Medea</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-display tracking-[0.2em] text-white/40 uppercase">Currency:</span>
-              <select 
-                value={selectedCurrency}
-                onChange={(e) => setSelectedCurrency(e.target.value)}
-                className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] font-mono outline-none focus:border-[#D4AF37]/50 text-[#D4AF37]"
-              >
-                {Object.keys(exchangeRates).map(currency => (
-                  <option key={currency} value={currency}>{currency}</option>
-                ))}
-              </select>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-4 border-r border-white/10 pr-6">
+                <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-display tracking-[0.2em] text-white/40 uppercase">Total Visitors</span>
+                  <span className="text-xs font-mono text-white">{visitors.total.toLocaleString()}</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[8px] font-display tracking-[0.2em] text-white/40 uppercase">Online Now</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#4DFF88] animate-pulse" />
+                    <span className="text-xs font-mono text-[#4DFF88]">{visitors.online.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-display tracking-[0.2em] text-white/40 uppercase">Currency:</span>
+                <select 
+                  value={selectedCurrency}
+                  onChange={(e) => setSelectedCurrency(e.target.value)}
+                  className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] font-mono outline-none focus:border-[#D4AF37]/50 text-[#D4AF37]"
+                >
+                  {Object.keys(exchangeRates).map(currency => (
+                    <option key={currency} value={currency}>{currency}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </header>
 

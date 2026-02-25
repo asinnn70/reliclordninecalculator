@@ -18,6 +18,46 @@ async function startServer() {
   const server = createServer(app);
   const PORT = 3000;
 
+  const activeUsers = new Map();
+
+  // API Route for Visitors (Used by local dev)
+  app.get("/api/visitors", async (req, res) => {
+    const now = Date.now();
+    const { id, action } = req.query;
+
+    let totalVisitors = 0;
+
+    try {
+      if (action === 'visit') {
+        const response = await fetch('https://api.counterapi.dev/v1/relic-lordnine/visitors/up');
+        const data = await response.json();
+        totalVisitors = data.count;
+      } else {
+        const response = await fetch('https://api.counterapi.dev/v1/relic-lordnine/visitors');
+        const data = await response.json();
+        totalVisitors = data.count || 0;
+      }
+    } catch (error) {
+      console.error("Error fetching total visitors:", error);
+    }
+
+    if (id) {
+      activeUsers.set(id, now);
+    }
+
+    // Clean up users inactive for > 1 minute
+    for (const [key, lastSeen] of activeUsers.entries()) {
+      if (now - lastSeen > 60000) {
+        activeUsers.delete(key);
+      }
+    }
+
+    return res.status(200).json({
+      total: totalVisitors,
+      online: Math.max(1, activeUsers.size)
+    });
+  });
+
   // API Route for Market Prices (Used by both local dev and Vercel)
   app.get("/api/market", async (req, res) => {
     const now = Date.now();
